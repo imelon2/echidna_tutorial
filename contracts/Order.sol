@@ -105,7 +105,7 @@ contract Order is EIP712, ERC2771Context {
     }
 
     //@notice 검증을 위한 struct typehash 정의  
-    bytes32 constant ORDERTOSIGN_TYPEHASH = keccak256("OrderSigData(uint256 orderId,address shipper,address carrier,bytes32 departure,bytes32 destination,bytes32 packageWeight,uint256 packagePrice,uint256 reward,uint256 collateral,uint256 expiredDate,uint256 nonce)");
+    bytes32 constant public ORDERTOSIGN_TYPEHASH = keccak256("OrderSigData(uint256 orderId,address shipper,address carrier,bytes32 departure,bytes32 destination,bytes32 packageWeight,uint256 packagePrice,uint256 reward,uint256 collateral,uint256 expiredDate,uint256 nonce)");
 
     constructor(address orderRules, address forwarder ) EIP712("Order","1") ERC2771Context( forwarder ) {
         _orderRules = orderRules;
@@ -130,6 +130,7 @@ contract Order is EIP712, ERC2771Context {
         orderList[_orderId]._price = price;
         orderList[_orderId]._collateral = price/10;
         
+
         if(expiredDate == 0) {
             orderList[_orderId].isDirect = true;
             orderList[_orderId]._expiredDate = block.timestamp + IOrderRules(_orderRules).getTimeExpiredWaitMatching();
@@ -155,31 +156,28 @@ contract Order is EIP712, ERC2771Context {
     //@param carrierCollateral2612Sig 캐리어의 담보금을 보관하겠다는 EIP2612 기반 signed msg
     //@param shipper712Sig shipper의 리워드 및 캐리어 매칭 정보를 담은 EIP2612 기반 signed msg
     function selectOrder(uint256 _orderId,
-        OrderSigData memory carrierOrderData, 
-        PermitSigData memory carrierPermitData, 
-        PermitSigData memory shipperPermitData) external {
-        // OrderSigData memory carrierOrderData, bytes memory carrierOrderSig,
-        // PermitSigData memory carrierPermitData, bytes memory carrierCollateralSig,
-        // PermitSigData memory shipperPermitData, bytes memory shipperRewardSig) external {
+        OrderSigData memory carrierOrderData, bytes memory carrierOrderSig,
+        PermitSigData memory carrierPermitData, bytes memory carrierCollateralSig,
+        PermitSigData memory shipperPermitData, bytes memory shipperRewardSig) external {
             require(orderList[_orderId]._orderId != 0, "order not exist");
             require(orderList[_orderId]._shipState == shippingState.ORDER_REGISTERED, "only not matched order can be matched");
-            require(block.timestamp < orderList[_orderId]._expiredDate, "order match time expired");
+            // require(block.timestamp < orderList[_orderId]._expiredDate, "order match time expired");
             // require(_msgSender() == orderList[_orderId]._shipper, "only shipper can select carrier");
 
-            // bytes32 structhash = hashStruct(carrierOrderData);
-            // (address signer,) = ECDSA.tryRecover(_hashTypedDataV4(structhash), carrierOrderSig);
+            bytes32 structhash = hashStruct(carrierOrderData);
+            (address signer,) = ECDSA.tryRecover(_hashTypedDataV4(structhash), carrierOrderSig);
             // require(signer == carrierOrderData.carrier, "Order Signature invalid");
-            // _useNonce(_orderId, carrierOrderData.carrier);
+            _useNonce(_orderId, carrierOrderData.carrier);
 
             address _tokenContract = IOrderRules(_orderRules).getDKATokenAddress();
 
             uint256 delay = IOrderRules(_orderRules).getTimeExpiredDelayedPick();
 
-            // IDKA(_tokenContract).permitLodis(carrierPermitData.owner, address(this), carrierPermitData.value, carrierPermitData.deadline, carrierCollateralSig);
+            IDKA(_tokenContract).permitLodis(carrierPermitData.owner, address(this), carrierPermitData.value, carrierPermitData.deadline, carrierCollateralSig);
             IDKA(_tokenContract).transferFrom(carrierPermitData.owner, address(this), carrierPermitData.value);
 
             // 리워드 혹은 담보가 40dka가 안되는 경우 체크 필요
-            // IDKA(_tokenContract).permitLodis(shipperPermitData.owner, address(this), shipperPermitData.value, shipperPermitData.deadline, shipperRewardSig);
+            IDKA(_tokenContract).permitLodis(shipperPermitData.owner, address(this), shipperPermitData.value, shipperPermitData.deadline, shipperRewardSig);
             IDKA(_tokenContract).transferFrom(shipperPermitData.owner, address(this), shipperPermitData.value);
 
             //update order
@@ -395,7 +393,7 @@ contract Order is EIP712, ERC2771Context {
         return orderId;
     }
     
-    function hashStruct(OrderSigData memory orderSigData) internal pure returns (bytes32) {
+    function hashStruct(OrderSigData memory orderSigData) public pure returns (bytes32) {
         return keccak256(
             abi.encode(
 			    ORDERTOSIGN_TYPEHASH,
@@ -429,5 +427,9 @@ contract Order is EIP712, ERC2771Context {
 
     function getRecord(address user) public view returns (TrackContributions memory) {
         return trackContributions[user];
+    }
+
+    function DOMAIN_SEPARATOR() public view returns(bytes32) {
+        return _domainSeparatorV4();
     }
 }

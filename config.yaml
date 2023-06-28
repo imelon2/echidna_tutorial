@@ -1,9 +1,11 @@
 # maxTimeDelay: 604799
-testMode: dapptest
-sender: ["0x0000000000000000000000000000000000000001"]
-multi-abi: false
+testMode: assertion
+# sender: ["0x0000000000000000000000000000000000000001"]
+# multi-abi: true
+# allContracts: true
 cryticArgs: ['--solc-remaps', '@=node_modules/@']
-testMaxGas: 80000300000
-balanceAddr: 0xffffffffffffffff
-codeSize: 0xffffffffffffffff
-testLimit: 500
+# testMaxGas: 80000300000
+# balanceAddr: 0xffffffffffffffff
+# codeSize: 0xffffffffffffffff
+testLimit: 50000
+# shrinkLimit: 500000

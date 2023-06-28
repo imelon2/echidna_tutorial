@@ -31,7 +31,7 @@ contract DKA is ERC20Permit, ERC2771Context {
         bytes memory signature
     ) public {
         require(msg.sender == _orderContract);
-        require(block.timestamp <= deadline, "FOUNDRY::ASSUME");
+        require(block.timestamp <= deadline, "Time Out!");
 
         bytes32 structHash = keccak256(
             abi.encode(
@@ -72,4 +72,8 @@ contract DKA is ERC20Permit, ERC2771Context {
             return super._msgData();
         }
     }
+
+    // function DOMAIN_SEPARATOR() public view override returns (bytes32) {
+    //     return _domainSeparatorV4();
+    // }
 }
