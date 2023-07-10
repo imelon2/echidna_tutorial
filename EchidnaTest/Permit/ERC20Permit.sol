@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-pragma solidity >=0.8.10;
+pragma solidity ^0.8.0;
 
 /// All credit goes towards solmate for their ERC20Permit implementation
 /// @notice Modern and gas efficient ERC20 + EIP-2612 implementation.

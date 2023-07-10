@@ -105,7 +105,7 @@ contract Order is EIP712, ERC2771Context {
     }
 
     //@notice 검증을 위한 struct typehash 정의  
-    bytes32 constant public ORDERTOSIGN_TYPEHASH = keccak256("OrderSigData(uint256 orderId,address shipper,address carrier,bytes32 departure,bytes32 destination,bytes32 packageWeight,uint256 packagePrice,uint256 reward,uint256 collateral,uint256 expiredDate,uint256 nonce)");
+    bytes32 constant ORDERTOSIGN_TYPEHASH = keccak256("OrderSigData(uint256 orderId,address shipper,address carrier,bytes32 departure,bytes32 destination,bytes32 packageWeight,uint256 packagePrice,uint256 reward,uint256 collateral,uint256 expiredDate,uint256 nonce)");
 
     constructor(address orderRules, address forwarder ) EIP712("Order","1") ERC2771Context( forwarder ) {
         _orderRules = orderRules;
@@ -161,12 +161,12 @@ contract Order is EIP712, ERC2771Context {
         PermitSigData memory shipperPermitData, bytes memory shipperRewardSig) external {
             require(orderList[_orderId]._orderId != 0, "order not exist");
             require(orderList[_orderId]._shipState == shippingState.ORDER_REGISTERED, "only not matched order can be matched");
-            // require(block.timestamp < orderList[_orderId]._expiredDate, "order match time expired");
+            require(block.timestamp < orderList[_orderId]._expiredDate, "order match time expired");
             // require(_msgSender() == orderList[_orderId]._shipper, "only shipper can select carrier");
 
             bytes32 structhash = hashStruct(carrierOrderData);
             (address signer,) = ECDSA.tryRecover(_hashTypedDataV4(structhash), carrierOrderSig);
-            // require(signer == carrierOrderData.carrier, "Order Signature invalid");
+            require(signer == carrierOrderData.carrier, "Order Signature invalid");
             _useNonce(_orderId, carrierOrderData.carrier);
 
             address _tokenContract = IOrderRules(_orderRules).getDKATokenAddress();
@@ -193,7 +193,7 @@ contract Order is EIP712, ERC2771Context {
                 orderList[_orderId]._failDate = orderList[_orderId]._expiredDate + 3 hours;
             }   
             orderList[_orderId]._shipState = shippingState.FINALIZED_CARRIER;
-            emit orderMatched(orderId, shippingState.FINALIZED_CARRIER);
+            emit orderMatched(_orderId, shippingState.FINALIZED_CARRIER);
     }
 
     //@notice 매칭이전 취소
@@ -213,7 +213,7 @@ contract Order is EIP712, ERC2771Context {
         OrderSigData memory shipperOrderData,
         bytes memory shipperMsg) external {
             require(orderList[_orderId]._shipState == shippingState.FINALIZED_CARRIER, "order not matched");
-            require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
+            // require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
             require(orderList[_orderId]._pickupDate > block.timestamp, "order should not be delayed");
             require(orderList[_orderId].ispickupContact == true, "face-to-face pickup");
 
@@ -223,17 +223,17 @@ contract Order is EIP712, ERC2771Context {
             _useNonce(_orderId, shipperOrderData.shipper);
 
             orderList[_orderId]._shipState = shippingState.CARRIER_PICKUP;
-            emit carrierpickUp(orderId, shippingState.CARRIER_PICKUP);
+            emit carrierpickUp(_orderId, shippingState.CARRIER_PICKUP);
     }
 
-    function pickOrderWithOutSig(uint256 _orderId) external {
-        require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
+    function pickOrderWithOutSig(uint256 _orderId) external {        
         require(orderList[_orderId]._shipState == shippingState.FINALIZED_CARRIER, "order not matched");
+        require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
         require(orderList[_orderId]._pickupDate > block.timestamp, "order should not be delayed");
         require(orderList[_orderId].ispickupContact == false, "non-contact pickup");
 
         orderList[_orderId]._shipState = shippingState.CARRIER_PICKUP;
-        emit carrierpickUp(orderId, shippingState.CARRIER_PICKUP);
+        emit carrierpickUp(_orderId, shippingState.CARRIER_PICKUP);
     }
 
     //@notice 픽업이전 유저에 의한 일방적인 취소
@@ -246,14 +246,23 @@ contract Order is EIP712, ERC2771Context {
         uint256 platformFee = IOrderRules(_orderRules).getPlatformFee();
         
         orderList[_orderId]._shipState = shippingState.DELIVERY_CANCEL;
-        if(msg.sender ==  orderList[_orderId]._shipper) {
-            IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, (orderList[_orderId]._reward * (100 - IOrderRules(_orderRules).getShipperFee()) / 100) - platformFee);
-            IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, orderList[_orderId]._collateral);
-        } else if(msg.sender == orderList[_orderId]._carrier) {
-            IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, orderList[_orderId]._reward);
-            IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, (orderList[_orderId]._collateral * (100 -  IOrderRules(_orderRules).getCarrierFee()) / 100) - platformFee);
+        if(_msgSender() ==  orderList[_orderId]._shipper) {
+            uint256 shipperFee = orderList[_orderId]._reward * IOrderRules(_orderRules).getShipperFee() / 100;
+            IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, orderList[_orderId]._reward - shipperFee - platformFee);
+            IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, orderList[_orderId]._collateral + shipperFee);
+            IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee);
+        } else if(_msgSender() == orderList[_orderId]._carrier) {
+            uint256 carrierFee = orderList[_orderId]._collateral * IOrderRules(_orderRules).getCarrierFee() / 100;
+            IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, orderList[_orderId]._reward + carrierFee);
+
+            if(orderList[_orderId]._collateral - carrierFee < platformFee) {
+                IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), orderList[_orderId]._collateral - carrierFee);
+            } else {
+                IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, orderList[_orderId]._collateral - carrierFee - platformFee);
+                IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee);
+            }
         }
-        emit orderCanceled(orderId, shippingState.DELIVERY_CANCEL);
+        emit orderCanceled(_orderId, shippingState.DELIVERY_CANCEL);
     }
 
     //@notice 픽업 시간 초과로 인한 shipper의 취소 요청
@@ -263,17 +272,23 @@ contract Order is EIP712, ERC2771Context {
         require(orderList[_orderId]._pickupDate < block.timestamp, "order is not delayed");
 
         address _tokenContract = IOrderRules(_orderRules).getDKATokenAddress();
-        uint256 carrierFee = IOrderRules(_orderRules).getCarrierFee();
+        uint256 carrierFee = orderList[_orderId]._collateral * IOrderRules(_orderRules).getCarrierFee() / 100;
         uint256 platformFee = IOrderRules(_orderRules).getPlatformFee();
 
         orderList[_orderId]._shipState = shippingState.CARRIER_PICKUP_DELAY;
 
-        IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, (orderList[_orderId]._collateral * (100 - carrierFee) / 100) - platformFee);
-        IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, orderList[_orderId]._reward + orderList[_orderId]._collateral * carrierFee / 100);
+        IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, orderList[_orderId]._reward + carrierFee);
+
+        if(orderList[_orderId]._collateral - carrierFee < platformFee) {
+            IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), orderList[_orderId]._collateral - carrierFee);
+        } else {
+            IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, orderList[_orderId]._collateral - carrierFee - platformFee);
+            IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee);
+        }
 
         trackContributions[orderList[_orderId]._shipper].expiredOrder++;
         trackContributions[orderList[_orderId]._carrier].expiredOrder++;
-        emit orderCanceled(orderId, shippingState.CARRIER_PICKUP_DELAY);
+        emit orderCanceled(_orderId, shippingState.CARRIER_PICKUP_DELAY);
     }
 
     //@notice 배송이 성공적으로 완료되었을 경우, 캐리어에게 리워드 지급/담보금 반환한다
@@ -283,7 +298,7 @@ contract Order is EIP712, ERC2771Context {
     //@param orderId 주문 ID
     //@param shipper712Sig shipper의 시그니처
     function completeOrder(uint256 _orderId, OrderSigData memory receiverOrderData, bytes memory shipper712Sig) external {
-        require(_msgSender() == orderList[_orderId]._carrier, "only carrier can complete delivery");
+        // require(_msgSender() == orderList[_orderId]._carrier, "only carrier can complete delivery");
         require(orderList[_orderId]._shipState == shippingState.CARRIER_PICKUP, "order not started");
         require(orderList[_orderId].iscompleteContact == true, "face-to-face complete");
 
@@ -307,7 +322,7 @@ contract Order is EIP712, ERC2771Context {
         SBTMinter(IOrderRules(_orderRules).getSBTMinterAddress()).checkAvailableSBTs(orderList[_orderId]._carrier, IOrderRules(_orderRules).getCarrierSBTAddress());
         SBTMinter(IOrderRules(_orderRules).getSBTMinterAddress()).checkAvailableSBTs(orderList[_orderId]._shipper, IOrderRules(_orderRules).getShipperSBTAddress());
 
-        emit orderCompleted(orderId, shippingState.DELIVERY_COMPLETE);
+        emit orderCompleted(_orderId, shippingState.DELIVERY_COMPLETE);
     }
 
     function completeOrderWithOutSig(uint256 _orderId) external {
@@ -322,7 +337,6 @@ contract Order is EIP712, ERC2771Context {
         uint256 escrowAmount = orderList[_orderId]._reward + orderList[_orderId]._collateral;
 
         IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee);
-
         IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, escrowAmount - platformFee);
 
         trackContributions[orderList[_orderId]._shipper].completeOrder_shipping++;
@@ -331,7 +345,7 @@ contract Order is EIP712, ERC2771Context {
         SBTMinter(IOrderRules(_orderRules).getSBTMinterAddress()).checkAvailableSBTs(orderList[_orderId]._carrier, IOrderRules(_orderRules).getCarrierSBTAddress());
         SBTMinter(IOrderRules(_orderRules).getSBTMinterAddress()).checkAvailableSBTs(orderList[_orderId]._shipper, IOrderRules(_orderRules).getShipperSBTAddress());
         
-        emit orderCompleted(orderId, shippingState.DELIVERY_COMPLETE);
+        emit orderCompleted(_orderId, shippingState.DELIVERY_COMPLETE);
     }
 
     //@notice 배송이 실패 (딜레이) 되었을 경우, shipper에게 리워드/담보금 지급한다
@@ -356,7 +370,7 @@ contract Order is EIP712, ERC2771Context {
 
         trackContributions[orderList[_orderId]._shipper].failOrder++;
         trackContributions[orderList[_orderId]._carrier].failOrder++;
-        emit orderFailed(orderId, shippingState.DELIVERY_EXPIRED);
+        emit orderFailed(_orderId, shippingState.DELIVERY_EXPIRED);
     }
 
     //@notice 배송이 취소되었을 경우, 규책사유에 따라 리워드 지급/담보금 반환 [기획 요청에 따른 협의]
@@ -379,12 +393,16 @@ contract Order is EIP712, ERC2771Context {
         }
 
         if (cancelList[_orderId].shipperLock && cancelList[_orderId].carrierLock && !cancelList[_orderId].canceled) {
-            IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee * 2);
             IDKA(_tokenContract).transfer(orderList[_orderId]._shipper, orderList[_orderId]._reward - platformFee);
-            IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, orderList[_orderId]._collateral - platformFee);
+            if(orderList[_orderId]._collateral - platformFee < 0) {
+                IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee + orderList[_orderId]._collateral);
+            } else {
+                IDKA(_tokenContract).transfer(orderList[_orderId]._carrier, orderList[_orderId]._collateral - platformFee);
+                IDKA(_tokenContract).transfer(IOrderRules(_orderRules).getTreasuryAddress(), platformFee * 2);
+            }
             orderList[_orderId]._shipState = shippingState.DELIVERY_CANCEL;
             cancelList[_orderId].canceled = true;
-            emit orderCanceled(orderId, shippingState.DELIVERY_CANCEL);
+            emit orderCanceled(_orderId, shippingState.DELIVERY_CANCEL);
         } 
         
     }

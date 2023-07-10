@@ -20,7 +20,7 @@ contract DKA is ERC20Permit, ERC2771Context {
 
     constructor( address forwarder, address orderContract ) ERC2771Context( forwarder ) ERC20("dKargo", "DKA") ERC20Permit("dKargo") {
         _orderContract = orderContract;
-        _mint(msg.sender, 1000000000 * 10 ** decimals()); 
+        _mint(msg.sender, 40000*10 ** decimals()); 
     }
 
     function permitLodis(
