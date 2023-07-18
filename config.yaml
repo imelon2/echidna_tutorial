@@ -5,9 +5,9 @@ multi-abi: true
 allContracts: true
 cryticArgs: ['--solc-remaps', '@=node_modules/@']
 # testMaxGas: 80000300000
-# balanceAddr: 0xffffffffffffffff
-codeSize: 0xffffffffffffffff
+balanceAddr: 0x16345785d8a0000
+codeSize: 0xffffffffffffffffffff
 testLimit: 50000
 # seqLen: 10000
 # allowFFI: true
-shrinkLimit: 500000
+shrinkLimit: 500

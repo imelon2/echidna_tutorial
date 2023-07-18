@@ -36,6 +36,15 @@ interface IOrderRules {
     /// @notice 주문등록 후 매칭되기까지 기다리는 최대시간
     function getTimeExpiredWaitMatching() external view returns(uint256);
 
+    /// @notice 특정일 매칭 시, 매칭되기까지 기다리는 최대시간
+    function getTimeExpiredSpecificFailDate() external view returns(uint256);
+
+    /// @notice 특정일 매칭전까지 기다리는 최대시간
+    function getTimeExpiredSpecificMatchingFailDate() external view returns(uint256);
+
+    /// @notice 특정일 매칭 시, 배송완료까지 최대시간
+    function getTimeExpiredSpecificDeliveryFailDate() external view returns(uint256);
+
     /// @notice DKA contract address 호출하는 함수
     function getDKATokenAddress() external view returns(address);
 

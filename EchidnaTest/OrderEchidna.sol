@@ -36,6 +36,7 @@ contract OrderEchidnaTest {
 
     constructor() {
         hevm = IHevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+
         _TxForwarder = new TxForwarder();
         _OrderRules = new OrderRules();
         _Order = new Order(address(_OrderRules),address(_TxForwarder));
@@ -44,8 +45,8 @@ contract OrderEchidnaTest {
         _CarrierSBT = new SBT(address(_SBTMinter));
 
         _DKA = new DKA(address(_TxForwarder),address(_Order));
-        _DKA.transfer(address(shipper),20000*10**18);
-        _DKA.transfer(address(carrier),20000*10**18);
+        _DKA.transfer(address(shipper),200 ether);
+        _DKA.transfer(address(carrier),200 ether);
 
         _Treasury = new Treasury(address(_DKA));
         _OrderRules.setDKATokenAddress(address(_DKA));
@@ -53,12 +54,8 @@ contract OrderEchidnaTest {
         _OrderRules.setSBTMinterAddress(address(_SBTMinter));
         _OrderRules.setShipperSBTAddress(address(_ShipperSBT));
         _OrderRules.setCarrierSBTAddress(address(_CarrierSBT));
-    }
 
-    // function test_check_balance() public {
-    //     uint currentBalance = _DKA.balanceOf(address(0x01));
-    //     assert(currentBalance == 20000*10**18);
-    // }
+    }
 
 
     function getPermitSignature(
@@ -109,20 +106,24 @@ contract OrderEchidnaTest {
 
 
     function test_Order_Price(uint256 price) public {
+        require( 0 < price && price <= 2000 ether, "FOUNDRY::ASSUME");
+        
         uint256 _orderId = _Order.getOrderId();
 
         // CreateOrder()
+        hevm.prank(shipper);
         _Order.createOrder(shipper,bytes32("departure"),bytes32("destination"),bytes32("weight"),price,0,true,true,"1");
 
+        // create sig
         Order.order memory data = _Order.getOrder(_orderId);
-        uint256 reward = 200* 10 **18;
+        uint256 reward = 50 ether;
 
         Order.OrderSigData memory carrierOrderData = Order.OrderSigData(data._orderId,data._shipper,carrier,data._departure,data._destination,data._packageWeight,price,reward,data._collateral,data._expiredDate, _Order.getNonce(_orderId,carrier));
         (sigVRS memory _sigVRS1,) = getOrderSignature(carrierOrderData,3);
         bytes memory carrierOrderSig = concatSig(_sigVRS1.v,_sigVRS1.r,_sigVRS1.s);
 
-        Order.PermitSigData memory carrierPermitData = Order.PermitSigData(carrier,address(_Order),reward,_DKA.nonces(carrier),block.timestamp);
-        (sigVRS memory _sigVRS2,) = getPermitSignature(carrier,address(_Order),reward,3);
+        Order.PermitSigData memory carrierPermitData = Order.PermitSigData(carrier,address(_Order),data._collateral,_DKA.nonces(carrier),block.timestamp);
+        (sigVRS memory _sigVRS2,) = getPermitSignature(carrier,address(_Order),data._collateral,3);
         bytes memory carrierCollateralSig = concatSig(_sigVRS2.v,_sigVRS2.r,_sigVRS2.s);
 
 
@@ -130,16 +131,22 @@ contract OrderEchidnaTest {
         (sigVRS memory _sigVRS3,) = getPermitSignature(shipper,address(_Order),reward,2);
         bytes memory shipperRewardSig = concatSig(_sigVRS3.v,_sigVRS3.r,_sigVRS3.s);
 
+        // SelectOrder()
+        hevm.prank(shipper);
         _Order.selectOrder(_orderId, carrierOrderData, carrierOrderSig,carrierPermitData, carrierCollateralSig,shipperPermitData,shipperRewardSig);
 
+        // create sig for pickOrder
         (sigVRS memory _sigVRS4,) = getOrderSignature(carrierOrderData,2);
+
+        // PickOrder()
+        hevm.prank(carrier);
         _Order.pickOrder(_orderId, carrierOrderData, concatSig(_sigVRS4.v,_sigVRS4.r,_sigVRS4.s));
 
-        (sigVRS memory _sigVRS5,) = getOrderSignature(carrierOrderData,2);        
+        (sigVRS memory _sigVRS5,) = getOrderSignature(carrierOrderData,2);
+        hevm.prank(carrier);
         _Order.completeOrder(_orderId, carrierOrderData, concatSig(_sigVRS5.v,_sigVRS5.r,_sigVRS5.s));
 
-        uint256 currentBalance =_DKA.balanceOf(address(_Order));
-        emit LogBalance(currentBalance);
+
     }
 
     function concatSig(uint8 v, bytes32 r, bytes32 s) internal pure returns(bytes memory signature) {
@@ -150,6 +157,3 @@ contract OrderEchidnaTest {
         signer = ecrecover(hashMsg, v, r, s);
     }
 }
-
-//400
-//000000000000000000

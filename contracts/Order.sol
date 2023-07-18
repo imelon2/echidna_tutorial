@@ -119,7 +119,7 @@ contract Order is EIP712, ERC2771Context {
     //@param locPackage 주문 출발지/목적지/물품규격 정의된 코드 1174011000
     //@param expiredDate 배송완료되어야 할 기간 
     function createOrder (address shipper, bytes32 departure, bytes32 destination, bytes32 weight, uint256 price, uint256 expiredDate, bool pickupType, bool completeType, string memory extraData) external returns (uint256) {
-        // require(_msgSender() == shipper, "order must be created by self");
+        require(_msgSender() == shipper, "order must be created by self");
         uint256 _orderId = getOrderId();
         require(orderList[_orderId]._shipper == address(0), "order already exist");
         orderList[_orderId]._orderId = _orderId;
@@ -136,13 +136,13 @@ contract Order is EIP712, ERC2771Context {
             orderList[_orderId]._expiredDate = block.timestamp + IOrderRules(_orderRules).getTimeExpiredWaitMatching();
         } else {            
             orderList[_orderId].isDirect = false;
-            orderList[_orderId]._expiredDate = expiredDate - 3 hours;
+            orderList[_orderId]._expiredDate = expiredDate - IOrderRules(_orderRules).getTimeExpiredSpecificMatchingFailDate();
         }
 
         orderList[_orderId].ispickupContact = pickupType;
         orderList[_orderId].iscompleteContact = completeType;
         orderList[_orderId]._shipState = shippingState.ORDER_REGISTERED;
-        emit orderCreated(orderId, shippingState.ORDER_REGISTERED);
+        emit orderCreated(_orderId, shippingState.ORDER_REGISTERED);
 
         orderId++;
 
@@ -162,7 +162,7 @@ contract Order is EIP712, ERC2771Context {
             require(orderList[_orderId]._orderId != 0, "order not exist");
             require(orderList[_orderId]._shipState == shippingState.ORDER_REGISTERED, "only not matched order can be matched");
             require(block.timestamp < orderList[_orderId]._expiredDate, "order match time expired");
-            // require(_msgSender() == orderList[_orderId]._shipper, "only shipper can select carrier");
+            require(_msgSender() == orderList[_orderId]._shipper, "only shipper can select carrier");
 
             bytes32 structhash = hashStruct(carrierOrderData);
             (address signer,) = ECDSA.tryRecover(_hashTypedDataV4(structhash), carrierOrderSig);
@@ -190,7 +190,7 @@ contract Order is EIP712, ERC2771Context {
                 orderList[_orderId]._failDate = block.timestamp + IOrderRules(_orderRules).getTimeExpiredDeliveryFault();
             } else {
                 orderList[_orderId]._pickupDate = orderList[_orderId]._expiredDate - delay;
-                orderList[_orderId]._failDate = orderList[_orderId]._expiredDate + 3 hours;
+                orderList[_orderId]._failDate = orderList[_orderId]._expiredDate + IOrderRules(_orderRules).getTimeExpiredSpecificDeliveryFailDate();
             }   
             orderList[_orderId]._shipState = shippingState.FINALIZED_CARRIER;
             emit orderMatched(_orderId, shippingState.FINALIZED_CARRIER);
@@ -202,6 +202,7 @@ contract Order is EIP712, ERC2771Context {
         require(orderList[_orderId]._shipState == shippingState.ORDER_REGISTERED, "only order before match can be canceled");
 
         orderList[_orderId]._shipState = shippingState.DELIVERY_CANCEL;
+        emit orderCanceled(_orderId, shippingState.DELIVERY_CANCEL);
     }
 
     //@notice 캐리어의 물품이 픽업 되었을 경우, shipper의 시그니처를 검증한 후, shippingState CARRIER_PICKUP으로 변경
@@ -213,8 +214,7 @@ contract Order is EIP712, ERC2771Context {
         OrderSigData memory shipperOrderData,
         bytes memory shipperMsg) external {
             require(orderList[_orderId]._shipState == shippingState.FINALIZED_CARRIER, "order not matched");
-            // require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
-            require(orderList[_orderId]._pickupDate > block.timestamp, "order should not be delayed");
+            require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
             require(orderList[_orderId].ispickupContact == true, "face-to-face pickup");
 
             bytes32 structhash = hashStruct(shipperOrderData);
@@ -229,7 +229,6 @@ contract Order is EIP712, ERC2771Context {
     function pickOrderWithOutSig(uint256 _orderId) external {        
         require(orderList[_orderId]._shipState == shippingState.FINALIZED_CARRIER, "order not matched");
         require(_msgSender() == orderList[_orderId]._carrier, "only carrier can pick baggage");
-        require(orderList[_orderId]._pickupDate > block.timestamp, "order should not be delayed");
         require(orderList[_orderId].ispickupContact == false, "non-contact pickup");
 
         orderList[_orderId]._shipState = shippingState.CARRIER_PICKUP;
@@ -298,7 +297,7 @@ contract Order is EIP712, ERC2771Context {
     //@param orderId 주문 ID
     //@param shipper712Sig shipper의 시그니처
     function completeOrder(uint256 _orderId, OrderSigData memory receiverOrderData, bytes memory shipper712Sig) external {
-        // require(_msgSender() == orderList[_orderId]._carrier, "only carrier can complete delivery");
+        require(_msgSender() == orderList[_orderId]._carrier, "only carrier can complete delivery");
         require(orderList[_orderId]._shipState == shippingState.CARRIER_PICKUP, "order not started");
         require(orderList[_orderId].iscompleteContact == true, "face-to-face complete");
 

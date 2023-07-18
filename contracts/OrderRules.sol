@@ -12,6 +12,8 @@ contract OrderRules is Ownable {
     uint256 private timeExpiredDelayedPick; // 픽업지연 시간
     uint256 private timeExpiredDeliveryFault; // 배송실패 시간
     uint256 private timeExpiredWaitMatching; // 주문등록 후 매칭되기까지 기다리는 최대시간
+    uint256 private timeExpiredSpecificMatchingFailDate; // 특정일 매칭전까지 기다리는 최대시간
+    uint256 private timeExpiredSpecificDeliveryFailDate; // 특정일 매칭 시, 배송완료까지 최대시간
 
     address private DKAToken;
     address private SBTMinter;
@@ -28,6 +30,9 @@ contract OrderRules is Ownable {
         timeExpiredDelayedPick = 3 hours;
         timeExpiredDeliveryFault = 4 hours;
         timeExpiredWaitMatching = 30 minutes;
+
+        timeExpiredSpecificMatchingFailDate = 3 hours;
+        timeExpiredSpecificDeliveryFailDate = 3 hours;
     }
 
 
@@ -51,6 +56,12 @@ contract OrderRules is Ownable {
     }
     function getTimeExpiredWaitMatching() external view returns(uint256) {
         return timeExpiredWaitMatching;
+    }
+        function getTimeExpiredSpecificMatchingFailDate() external view returns(uint256) {
+        return timeExpiredSpecificMatchingFailDate;
+    }
+    function getTimeExpiredSpecificDeliveryFailDate() external view returns(uint256) {
+        return timeExpiredSpecificDeliveryFailDate;
     }
 
     // GET() Dkargo Contract Address
@@ -93,6 +104,12 @@ contract OrderRules is Ownable {
     }
     function setTimeExpiredWaitMatching(uint256 _timeExpiredWaitMatching) external onlyOwner {
         timeExpiredWaitMatching = _timeExpiredWaitMatching;
+    }
+    function setTimeExpiredSpecificMatchingFailDate(uint256 _timeExpiredSpecificMatchingFailDate) external onlyOwner {
+        timeExpiredSpecificMatchingFailDate = _timeExpiredSpecificMatchingFailDate;
+    }
+    function setTimeExpiredSpecificDeliveryFailDate(uint256 _timeExpiredSpecificDeliveryFailDate) external onlyOwner {
+        timeExpiredSpecificDeliveryFailDate = _timeExpiredSpecificDeliveryFailDate;
     }
 
     // SET() Dkargo Contract Address
